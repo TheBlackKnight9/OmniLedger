@@ -1,0 +1,118 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  INDIVIDUAL
+  BUSINESS
+  CA_STAFF
+  CA_PARTNER
+}
+
+model User {
+  id        String     @id @default(uuid())
+  email     String     @unique
+  name      String?
+  password  String?    // Hashed password for credentials login
+  role      Role       @default(INDIVIDUAL)
+  createdAt DateTime   @default(now())
+  entities  Entity[]
+  auditLogs AuditLog[]
+}
+
+model Entity {
+  id                String           @id @default(uuid())
+  userId            String
+  user              User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  entityType        String           // e.g. "INDIVIDUAL", "BUSINESS", "FIRM"
+  pan               String?
+  gstin             String?
+  cin               String?
+  tan               String?
+  displayName       String
+  complianceProfile Json             // Compliance setup, sources, etc.
+  complianceTasks   ComplianceTask[]
+  documents         Document[]
+}
+
+model ComplianceTask {
+  id            String    @id @default(uuid())
+  entityId      String
+  entity        Entity    @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  taskType      String    // e.g. "ITR", "GSTR-1", "GSTR-3B", "TDS", "PF_ESI", "ROC_MGT_7", "ROC_AOC_4"
+  dueDate       DateTime
+  period        String    // e.g. "FY 2025-26", "June 2026", "Q1 FY 2026-27"
+  status        String    // e.g. "PENDING", "COMPLETED", "OVERDUE", "FILED"
+  penaltyIfLate Float?
+  assignedTo    String?   // e.g. user id or staff name
+  filedAt       DateTime?
+}
+
+model Document {
+  id         String          @id @default(uuid())
+  entityId   String
+  entity     Entity          @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  docType    String          @default("OTHER") // e.g. "PAN", "GST_RETURN", "ITR_ACK", "INVOICE", "OTHER"
+  fileName   String
+  fileUrl    String
+  fileSize   Int             @default(0)       // in bytes
+  mimeType   String          @default("application/pdf")
+  aiTags     Json            @default("{}") // Stored JSON key-value tags parsed by AI
+  ocrText    String?         // Extracted text from OCR/AI
+  status     String          @default("PROCESSING") // "PROCESSING", "TAGGED", "FAILED"
+  expiryDate DateTime?
+  uploadedAt DateTime        @default(now())
+  uploadedBy String?
+  shares     DocumentShare[]
+}
+
+model DocumentShare {
+  id         String    @id @default(uuid())
+  documentId String
+  document   Document  @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  sharedWith String    // email or userId
+  permission String    @default("VIEW") // "VIEW", "DOWNLOAD"
+  expiresAt  DateTime?
+  createdAt  DateTime  @default(now())
+}
+
+model AuditLog {
+  id           String   @id @default(uuid())
+  userId       String?
+  user         User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action       String   // e.g. "LOGIN", "CREATE_ENTITY", "UPLOAD_DOC", "SUBMIT_TASK"
+  resourceType String   // e.g. "User", "Entity", "ComplianceTask", "Document"
+  resourceId   String?
+  timestamp    DateTime @default(now())
+  ipAddress    String?
+}
+
+model ChatMessage {
+  id        String   @id @default(cuid())
+  entityId  String
+  role      String   // 'user' | 'assistant'
+  content   String   @db.Text
+  createdAt DateTime @default(now())
+  metadata  Json?
+}
+
+model ITRDraft {
+  id             String    @id @default(cuid())
+  entityId       String
+  assessmentYear String
+  itrForm        String
+  status         String    // DRAFT|VERIFIED|FILED
+  salaryIncome   Json?
+  houseProperty  Json?
+  capitalGains   Json?
+  otherIncome    Json?
+  deductions     Json?
+  taxComputation Json?
+  filedAt        DateTime?
+  ackNumber      String?
+}
